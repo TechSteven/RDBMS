@@ -1,0 +1,23 @@
+{
+  "columns": {
+    "id": "INT",
+    "email": "TEXT",
+    "name": "TEXT"
+  },
+  "primary_key": "id",
+  "unique_keys": [
+    "email"
+  ],
+  "rows": [
+    {
+      "id": 1,
+      "email": "a@test.com",
+      "name": "Alice2"
+    },
+    {
+      "id": 3,
+      "email": "c@test.com",
+      "name": "Charlie"
+    }
+  ]
+}
