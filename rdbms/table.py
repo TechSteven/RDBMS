@@ -7,9 +7,14 @@ SUPPORTED_TYPES = {
     "FLOAT": float
 }
 
-
 class Table:
     def __init__(self, name, columns, primary_key=None, unique_keys=None, data_dir="data"):
+        """
+        name: str
+        columns: dict -> {column_name: type_name}
+        primary_key: str | None
+        unique_keys: list[str]
+        """
         self.name = name
         self.columns = columns
         self.primary_key = primary_key
@@ -21,83 +26,80 @@ class Table:
         self.rows = []
         self._load()
 
-    # ---------------- VALIDATION ----------------
+    # ----------------- Validation -----------------
 
     def _validate_row(self, row, skip_pk_check=False):
-        for col, col_type in self.columns.items():
-            if col not in row:
-                raise ValueError(f"Missing column: {col}")
+        # Schema & type validation
+        for column, col_type in self.columns.items():
+            if column not in row:
+                raise ValueError(f"Missing column: {column}")
+            expected_type = SUPPORTED_TYPES[col_type]
+            if not isinstance(row[column], expected_type):
+                raise TypeError(
+                    f"Column '{column}' expects {col_type}, got {type(row[column]).__name__}"
+                )
 
-            if not isinstance(row[col], SUPPORTED_TYPES[col_type]):
-                raise TypeError(f"Column '{col}' expects {col_type}")
-
+        # Extra columns
         for key in row:
             if key not in self.columns:
                 raise ValueError(f"Unknown column: {key}")
 
+        # Primary key
         if self.primary_key and not skip_pk_check:
-            pk_val = row[self.primary_key]
-            for r in self.rows:
-                if r[self.primary_key] == pk_val:
+            pk_value = row[self.primary_key]
+            for existing in self.rows:
+                if existing[self.primary_key] == pk_value:
                     raise ValueError("Primary key violation")
 
-        for ucol in self.unique_keys:
-            val = row[ucol]
-            for r in self.rows:
-                if r[ucol] == val:
-                    raise ValueError(f"Unique constraint violation on {ucol}")
+        # Unique constraints
+        for unique_col in self.unique_keys:
+            value = row[unique_col]
+            for existing in self.rows:
+                if existing[unique_col] == value:
+                    raise ValueError(f"Unique constraint violation on '{unique_col}'")
 
-    # ---------------- INSERT ----------------
+    # ----------------- CRUD -----------------
 
     def insert(self, row):
         self._validate_row(row)
         self.rows.append(row)
         self._save()
+        return f"Row inserted into '{self.name}'."
 
-    # ---------------- SELECT (WHERE) ----------------
+    def select_all(self):
+        return self.rows.copy()
+
+    def update_row(self, column, value, where_column, where_value):
+        """Update rows where where_column equals where_value"""
+        updated_count = 0
+        for row in self.rows:
+            if row.get(where_column) == where_value:
+                row[column] = value
+                updated_count += 1
+        self._save()
+        return f"Updated {updated_count} row(s) in '{self.name}'."
+
+    def delete_row(self, where_column, where_value):
+        """Delete rows where where_column equals where_value"""
+        original_count = len(self.rows)
+        self.rows = [r for r in self.rows if r.get(where_column) != where_value]
+        deleted_count = original_count - len(self.rows)
+        self._save()
+        return f"Deleted {deleted_count} row(s) from '{self.name}'."
+
+    # ----------------- Phase 6 Filtering -----------------
 
     def filter_rows(self, column, op, value):
+        """Return rows that match a simple condition column op value"""
         result = []
         for row in self.rows:
-            if op == "=" and row[column] == value:
+            if op == "=" and row.get(column) == value:
                 result.append(row)
-            elif op == ">" and row[column] > value:
+            elif op == ">" and row.get(column) > value:
                 result.append(row)
         return result
 
-    # ---------------- UPDATE (WHERE) ----------------
-
-    def update_where(self, set_column, set_value, where_column, where_value):
-        updated = 0
-
-        for row in self.rows:
-            if row[where_column] == where_value:
-                new_row = row.copy()
-                new_row[set_column] = set_value
-
-                self._validate_row(new_row, skip_pk_check=True)
-
-                row[set_column] = set_value
-                updated += 1
-
-        if updated:
-            self._save()
-
-        return updated
-
-    # ---------------- DELETE (WHERE) ----------------
-
-    def delete_where(self, where_column, where_value):
-        before = len(self.rows)
-        self.rows = [r for r in self.rows if r[where_column] != where_value]
-        deleted = before - len(self.rows)
-
-        if deleted:
-            self._save()
-
-        return deleted
-
-    # ---------------- STORAGE ----------------
+    # ----------------- Persistence -----------------
 
     def _save(self):
         os.makedirs(self.data_dir, exist_ok=True)
@@ -112,6 +114,6 @@ class Table:
     def _load(self):
         if not os.path.exists(self.file_path):
             return
-        with open(self.file_path) as f:
+        with open(self.file_path, "r") as f:
             data = json.load(f)
             self.rows = data.get("rows", [])
