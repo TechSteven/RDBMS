@@ -141,3 +141,5 @@ class Table:
         with open(self.file_path, "r") as f:
             data = json.load(f)
             self.rows = data.get("rows", [])
+
+
