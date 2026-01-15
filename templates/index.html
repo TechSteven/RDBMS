@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>John Ronnie MiniRDBMS</title>
+<style>
+  body { font-family: Arial; background: #1e1e2f; color: #fff; margin: 0; }
+  .container { width: 90%; max-width: 800px; margin: 2em auto; }
+  h1 { text-align: center; color: #00e676; }
+  textarea { width: 100%; height: 80px; font-family: monospace; font-size: 16px; }
+  button { padding: 10px 20px; margin: 5px; cursor: pointer; background: #00bcd4; border: none; color: #fff; font-weight: bold; }
+  button:hover { background: #0097a7; }
+  #result { margin-top: 20px; padding: 10px; background: #2c2c3c; border-radius: 5px; max-height: 300px; overflow-y: auto; }
+  .error { color: #ff5252; font-weight: bold; }
+  .success { color: #00e676; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>John Ronnie MiniRDBMS</h1>
+<textarea id="command" placeholder="Type your SQL command here..."></textarea>
+<br>
+<button onclick="runQuery()">Run Query</button>
+<button onclick="resetDB()">Reset Database</button>
+<div id="result"></div>
+</div>
+
+<script>
+async function runQuery() {
+    const cmd = document.getElementById("command").value;
+    if(!cmd.trim()) return;
+    const response = await fetch("/run", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({command: cmd})
+    });
+    const data = await response.json();
+    const resultDiv = document.getElementById("result");
+    if(data.success) {
+        resultDiv.innerHTML = `<div class="success">${JSON.stringify(data.result, null, 2)}</div>`;
+    } else {
+        resultDiv.innerHTML = `<div class="error">${data.result}</div>`;
+    }
+    document.getElementById("command").value = ""; // Clear input
+    resultDiv.scrollTop = resultDiv.scrollHeight;
+}
+
+async function resetDB() {
+    const response = await fetch("/run", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({command: "RESET DATABASE"})
+    });
+    const data = await response.json();
+    const resultDiv = document.getElementById("result");
+    resultDiv.innerHTML = `<div class="success">${data.result}</div>`;
+    document.getElementById("command").value = "";
+}
+</script>
+</body>
+</html>
