@@ -1,23 +1,14 @@
-{
-  "columns": {
-    "id": "INT",
-    "email": "TEXT",
-    "name": "TEXT"
+[
+  {
+    "id": 1,
+    "name": "Alice2"
   },
-  "primary_key": "id",
-  "unique_keys": [
-    "email"
-  ],
-  "rows": [
-    {
-      "id": 2,
-      "email": "b@test.com",
-      "name": "Bob2"
-    },
-    {
-      "id": 3,
-      "email": "c@test.com",
-      "name": "Charlie"
-    }
-  ]
-}
+  {
+    "id": 3,
+    "name": "Charlie"
+  },
+  {
+    "id": 2,
+    "name": "Bob"
+  }
+]

@@ -1,152 +1,101 @@
+# table.py
 import json
 import os
 
-SUPPORTED_TYPES = {
-    "INT": int,
-    "TEXT": str,
-    "FLOAT": float
-}
-
+DATA_DIR = "data"
 
 class Table:
-    def __init__(self, name, columns, primary_key=None, unique_keys=None, data_dir="data"):
+    def __init__(self, name, columns, primary_key=None, unique=None):
         self.name = name
-        self.columns = columns
+        self.columns = columns  # {'col_name': 'type'}
         self.primary_key = primary_key
-        self.unique_keys = unique_keys or []
-
-        self.data_dir = data_dir
-        self.file_path = os.path.join(self.data_dir, f"{self.name}.json")
-
+        self.unique = unique or []
         self.rows = []
-        self.indexes = {}  # {column: {value: [rows]}}
+        self.indexes = {}  # column_name -> {value: row}
+        self.load()
 
-        self._load()
+    @property
+    def file_path(self):
+        return os.path.join(DATA_DIR, f"{self.name}.json")
 
-    # ----------------- Validation -----------------
+    def load(self):
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR)
+        if os.path.exists(self.file_path):
+            with open(self.file_path, "r") as f:
+                self.rows = json.load(f)
+        else:
+            self.rows = []
 
-    def _validate_row(self, row, skip_pk_check=False):
-        for column, col_type in self.columns.items():
-            if column not in row:
-                raise ValueError(f"Missing column: {column}")
+    def save(self):
+        with open(self.file_path, "w") as f:
+            json.dump(self.rows, f, indent=2)
 
-            expected_type = SUPPORTED_TYPES[col_type]
-            if not isinstance(row[column], expected_type):
-                raise TypeError(
-                    f"Column '{column}' expects {col_type}, got {type(row[column]).__name__}"
-                )
+    def insert(self, row):
+        # Check primary key
+        if self.primary_key and any(r[self.primary_key] == row[self.primary_key] for r in self.rows):
+            raise ValueError("Primary key violation")
+        # Check unique constraints
+        for col in self.unique:
+            if any(r[col] == row[col] for r in self.rows):
+                raise ValueError(f"Unique constraint violation on '{col}'")
+        self.rows.append(row)
+        self.update_indexes(row)
+        self.save()
+        return f"Row inserted into '{self.name}'."
 
-        for key in row:
-            if key not in self.columns:
-                raise ValueError(f"Unknown column: {key}")
-
-        if self.primary_key and not skip_pk_check:
-            pk_value = row[self.primary_key]
-            for existing in self.rows:
-                if existing[self.primary_key] == pk_value:
-                    raise ValueError("Primary key violation")
-
-        for unique_col in self.unique_keys:
-            value = row[unique_col]
-            for existing in self.rows:
-                if existing[unique_col] == value:
-                    raise ValueError(f"Unique constraint violation on '{unique_col}'")
-
-    # ----------------- Indexing -----------------
+    def update_indexes(self, row):
+        for col, idx in self.indexes.items():
+            idx[row[col]] = row
 
     def create_index(self, column):
         if column not in self.columns:
             raise ValueError(f"Column '{column}' does not exist")
-
-        index = {}
+        idx = {}
         for row in self.rows:
-            value = row[column]
-            index.setdefault(value, []).append(row)
+            idx[row[column]] = row
+        self.indexes[column] = idx
+        return f"Index on '{column}' created."
 
-        self.indexes[column] = index
-        return f"Index created on {self.name}({column})"
+    def select(self, columns=None, where=None):
+        result = self.rows
+        if where:
+            result = [row for row in result if self._match_where(row, where)]
+        if columns is None or columns == ["*"]:
+            return result
+        return [{col: row[col] for col in columns} for row in result]
 
-    def _add_to_indexes(self, row):
-        for column, index in self.indexes.items():
-            value = row[column]
-            index.setdefault(value, []).append(row)
+    def _match_where(self, row, where):
+        # where is a dict of column -> (operator, value)
+        for col, (op, val) in where.items():
+            if op == "=" and row.get(col) != val:
+                return False
+            if op == "!=" and row.get(col) == val:
+                return False
+            if op == ">" and row.get(col) <= val:
+                return False
+            if op == "<" and row.get(col) >= val:
+                return False
+            if op == ">=" and row.get(col) < val:
+                return False
+            if op == "<=" and row.get(col) > val:
+                return False
+        return True
 
-    def _remove_from_indexes(self, row):
-        for column, index in self.indexes.items():
-            value = row[column]
-            if value in index:
-                index[value] = [r for r in index[value] if r is not row]
-                if not index[value]:
-                    del index[value]
-
-    # ----------------- CRUD -----------------
-
-    def insert(self, row):
-        self._validate_row(row)
-        self.rows.append(row)
-        self._add_to_indexes(row)
-        self._save()
-
-    def select_all(self):
-        return self.rows.copy()
-
-    def filter_rows(self, column, op, value):
-        if op == "=" and column in self.indexes:
-            return self.indexes[column].get(value, []).copy()
-
-        result = []
+    def update(self, set_values, where=None):
+        count = 0
         for row in self.rows:
-            if op == "=" and row[column] == value:
-                result.append(row)
-            elif op == ">" and row[column] > value:
-                result.append(row)
-            elif op == "<" and row[column] < value:
-                result.append(row)
-        return result
+            if not where or self._match_where(row, where):
+                for col, val in set_values.items():
+                    row[col] = val
+                count += 1
+        self.save()
+        return f"Updated {count} rows in '{self.name}'."
 
-    def update_where(self, set_column, set_value, where_column, where_value):
-        updated = 0
-        for row in self.rows:
-            if row[where_column] == where_value:
-                self._remove_from_indexes(row)
-                row[set_column] = set_value
-                self._add_to_indexes(row)
-                updated += 1
+    def delete(self, where=None):
+        original_len = len(self.rows)
+        self.rows = [row for row in self.rows if not (where and self._match_where(row, where))]
+        deleted_count = original_len - len(self.rows)
+        self.save()
+        return f"Deleted {deleted_count} rows from '{self.name}'."
 
-        self._save()
-        return updated
-
-    def delete_where(self, where_column, where_value):
-        remaining = []
-        deleted = 0
-
-        for row in self.rows:
-            if row[where_column] == where_value:
-                self._remove_from_indexes(row)
-                deleted += 1
-            else:
-                remaining.append(row)
-
-        self.rows = remaining
-        self._save()
-        return deleted
-
-    # ----------------- Persistence -----------------
-
-    def _save(self):
-        os.makedirs(self.data_dir, exist_ok=True)
-        with open(self.file_path, "w") as f:
-            json.dump({
-                "columns": self.columns,
-                "primary_key": self.primary_key,
-                "unique_keys": self.unique_keys,
-                "rows": self.rows
-            }, f, indent=2)
-
-    def _load(self):
-        if not os.path.exists(self.file_path):
-            return
-
-        with open(self.file_path, "r") as f:
-            data = json.load(f)
-            self.rows = data.get("rows", [])
